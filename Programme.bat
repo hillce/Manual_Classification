@@ -1,1 +1,0 @@
-C:\Users\shug4421\AppData\Local\Programs\Python\Python36\python.exe C:\Users\shug4421\Desktop\Manual_C_framework\main.py
