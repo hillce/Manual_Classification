@@ -27,7 +27,7 @@ Artefact List:
 """
 
 # Python Standard Libraries
-import os, time, sys, csv, copy
+import os, time, sys, csv, copy, re
 
 # Site packages
 from PyQt5 import Qt, QtWidgets, QtCore, QtGui
@@ -38,6 +38,7 @@ import matplotlib.image as mpimg
 import matplotlib.patches as patches
 import pydicom
 from PIL import Image
+import mahotas
 
 # User Functions
 from GUI_functions import general_layout
@@ -63,9 +64,12 @@ class UI_classification(QtWidgets.QMainWindow):
                     8:"Over-anonymised data",9:"Evidence of Fat/Water Swap",10:"Incorrect Protocol",11:"Protocol Modification",12:"Effect of high fat on T1",13:"Series not available",
                     14:"Liver not in FOV",15:"Centre Frequency Variation",16:"Contrast agent suspected/confirmed",17:"Data acquired in suboptimal location",
                     18:"Unsupported Acquisition Parameters"}
-        self.cropListOptions = ['Body','Heart','Lung','Liver','Kidney','IVC','Aorta','Spleen']
+        self.cropListOptions = ['Body','Heart','Cyst','Lung','Liver','Kidney','IVC','Aorta','Spleen']
         self.penColor = {'Liver':QtGui.QColor(255,0,0,255),'Body':QtGui.QColor(0,255,0,255),'Cyst':QtGui.QColor(0,0,255,255),'Lung':QtGui.QColor(255,0,255,255),
-                        'Heart':QtGui.QColor(255,255,0,255),'Kidney':QtGui.QColor(255,0,0,255//10),'IVC':QtGui.QColor(0,255,0,255//10),'Aorta':QtGui.QColor(0,0,255,255//10),
+                        'Heart':QtGui.QColor(255,255,0,255),'Kidney':QtGui.QColor(255,0,0,255),'IVC':QtGui.QColor(0,255,0,255),'Aorta':QtGui.QColor(0,0,255,255),
+                        'Spleen':QtGui.QColor(0,255,255,255)}
+        self.brushColor = {'Liver':QtGui.QColor(255,0,0,255//10),'Body':QtGui.QColor(0,255,0,255//10),'Cyst':QtGui.QColor(0,0,255,255//10),'Lung':QtGui.QColor(255,0,255,255//10),
+                        'Heart':QtGui.QColor(255,255,0,255//10),'Kidney':QtGui.QColor(255,0,0,255//10),'IVC':QtGui.QColor(0,255,0,255//10),'Aorta':QtGui.QColor(0,0,255,255//10),
                         'Spleen':QtGui.QColor(0,255,255,255//10)}
         self.curImg = 0
         self.curSub = 0
@@ -86,14 +90,16 @@ class UI_classification(QtWidgets.QMainWindow):
         self.l_img = QtWidgets.QLabel()
         self.t_hdrs = QtWidgets.QTableWidget()
 
-        self.gb_artefacts = QtWidgets.QGroupBox("Artefact Classes")
+        self.gb_artefacts = QtWidgets.QGroupBox("Object Classes")
         self.cb_artefacts = QtWidgets.QComboBox()
         self.t_artefacts = QtWidgets.QTableWidget()
+        self.t_segmentations = QtWidgets.QTableWidget()
         self.b_delete_crop = QtWidgets.QPushButton("Delete Selected ROIs")
         self.b_redraw_crop = QtWidgets.QPushButton("Redraw Selected ROIs Only")
         self.cb_artefacts.addItems(self.artefacts.values())
         self.vBox_artefacts = QtWidgets.QVBoxLayout()
         self.vBox_artefacts.addWidget(self.t_artefacts)
+        self.vBox_artefacts.addWidget(self.t_segmentations)
         self.vBox_artefacts.addWidget(self.cb_artefacts)
         self.vBox_artefacts.addWidget(self.b_delete_crop)
         self.vBox_artefacts.addWidget(self.b_redraw_crop)
@@ -140,16 +146,43 @@ class UI_classification(QtWidgets.QMainWindow):
         self.prev_img_shortcut.activated.connect(lambda button='prev': self.change_img(button))
 
         self.crop_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("1"),self)
-        self.crop_shortcut.activated.connect(self.open_crop)
+        self.crop_shortcut.activated.connect(lambda cl='Liver' : self.open_crop(cl=cl))
+        self.crop_shortcut_B = QtWidgets.QShortcut(QtGui.QKeySequence("2"),self)
+        self.crop_shortcut_B.activated.connect(lambda cl='Body' : self.open_crop(cl=cl))
         self.crop_shortcut_C = QtWidgets.QShortcut(QtGui.QKeySequence("3"),self)
         self.crop_shortcut_C.activated.connect(lambda cl='Cyst' : self.open_crop(cl=cl))
         self.crop_shortcut_H = QtWidgets.QShortcut(QtGui.QKeySequence("4"),self)
         self.crop_shortcut_H.activated.connect(lambda cl='Heart' : self.open_crop(cl=cl))
         self.crop_shortcut_L = QtWidgets.QShortcut(QtGui.QKeySequence("5"),self)
         self.crop_shortcut_L.activated.connect(lambda cl='Lung' : self.open_crop(cl=cl))
-        self.crop_shortcut_B = QtWidgets.QShortcut(QtGui.QKeySequence("2"),self)
-        self.crop_shortcut_B.activated.connect(lambda cl='Body' : self.open_crop(cl=cl))
+        self.crop_shortcut_K = QtWidgets.QShortcut(QtGui.QKeySequence("6"),self)
+        self.crop_shortcut_K.activated.connect(lambda cl='Kidney' : self.open_crop(cl=cl))
+        self.crop_shortcut_IVC = QtWidgets.QShortcut(QtGui.QKeySequence("7"),self)
+        self.crop_shortcut_IVC.activated.connect(lambda cl='IVC' : self.open_crop(cl=cl))
+        self.crop_shortcut_A = QtWidgets.QShortcut(QtGui.QKeySequence("8"),self)
+        self.crop_shortcut_A.activated.connect(lambda cl='Aorta' : self.open_crop(cl=cl))
+        self.crop_shortcut_S = QtWidgets.QShortcut(QtGui.QKeySequence("9"),self)
+        self.crop_shortcut_S.activated.connect(lambda cl='Spleen' : self.open_crop(cl=cl))
 
+        self.seg_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+1"),self)
+        self.seg_shortcut.activated.connect(lambda cl='Liver' : self.open_seg(cl=cl))
+        self.seg_shortcut_B = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+2"),self)
+        self.seg_shortcut_B.activated.connect(lambda cl='Body' : self.open_seg(cl=cl))
+        self.seg_shortcut_C = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+3"),self)
+        self.seg_shortcut_C.activated.connect(lambda cl='Cyst' : self.open_seg(cl=cl))
+        self.seg_shortcut_H = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+4"),self)
+        self.seg_shortcut_H.activated.connect(lambda cl='Heart' : self.open_seg(cl=cl))
+        self.seg_shortcut_L = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+5"),self)
+        self.seg_shortcut_L.activated.connect(lambda cl='Lung' : self.open_seg(cl=cl))
+        self.seg_shortcut_K = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+6"),self)
+        self.seg_shortcut_K.activated.connect(lambda cl='Kidney' : self.open_seg(cl=cl))
+        self.seg_shortcut_IVC = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+7"),self)
+        self.seg_shortcut_IVC.activated.connect(lambda cl='IVC' : self.open_seg(cl=cl))
+        self.seg_shortcut_A = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+8"),self)
+        self.seg_shortcut_A.activated.connect(lambda cl='Aorta' : self.open_seg(cl=cl))
+        self.seg_shortcut_S = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+9"),self)
+        self.seg_shortcut_S.activated.connect(lambda cl='Spleen' : self.open_seg(cl=cl))
+        
         self.close_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("ESC"),self)
         self.close_shortcut.activated.connect(self.close)
 
@@ -157,11 +190,6 @@ class UI_classification(QtWidgets.QMainWindow):
         self.check.setInterval(1000)
         self.check.timeout.connect(self.check_for_crop)
         self.check.start()
-
-        self.check2 = QtCore.QTimer()
-        self.check2.setInterval(1000)
-        self.check2.timeout.connect(self.check_for_seg)
-        self.check2.start()
 
         buttonBox = QtWidgets.QGridLayout()
         buttonBox.addWidget(self.b_submit,0,0,2,1)
@@ -346,28 +374,23 @@ class UI_classification(QtWidgets.QMainWindow):
                         if line not in self.cropList:
                             update = True
                             self.cropList.append(line)
-            painterImgPatient.end()
 
-        if update:
-            self.update_table()
-            self.l_img.setPixmap(imgPatient.scaled(750, 1500, QtCore.Qt.KeepAspectRatio))
-            self.l_img.update()
-            self.update()
-
-    def check_for_seg(self):
-        update = False
         if self.segmentationCSV in os.listdir():
-            imgPatient = QtGui.QPixmap("Temp_Image.png")
-            painterImgPatient = QtGui.QPainter(imgPatient)         
             with open(self.segmentationCSV,'r') as f:
                 csvObj = csv.DictReader(f)
                 for line in csvObj:
-                    print(line)
                     if self.PatientID in line['File']:
                         painterImgPatient.setPen(self.penColor[line['Object']])
+                        painterImgPatient.setBrush(self.brushColor[line['Object']])
                         polygon = QtGui.QPolygon()
-                        self.format_points(line['Points'])
+                        points = self.format_points(line['Points'])
+                        for pnts in points:
+                            qP = QtCore.QPoint(pnts[0]*384//800,pnts[1]*288//600)
+                            polygon.append(qP)
+
+                        painterImgPatient.drawPolygon(polygon,fillRule=QtCore.Qt.OddEvenFill)
                         update = True
+            
             painterImgPatient.end()
 
         if update:
@@ -398,6 +421,25 @@ class UI_classification(QtWidgets.QMainWindow):
         self.t_artefacts.setHorizontalHeaderItem(2,QtWidgets.QTableWidgetItem('y0'))
         self.t_artefacts.setHorizontalHeaderItem(3,QtWidgets.QTableWidgetItem('x1'))
         self.t_artefacts.setHorizontalHeaderItem(4,QtWidgets.QTableWidgetItem('y1'))
+
+        rowCnt = 0
+        tempList = []
+        with open(self.segmentationCSV,'r') as f:
+            csvObj = csv.DictReader(f)
+            for line in csvObj:
+                if self.PatientID in line['File']:
+                    tempList.append([line['Object'],line['Points']])
+                    rowCnt += 1
+        self.t_segmentations.setRowCount(rowCnt)
+        self.t_segmentations.setColumnCount(2)
+
+        for ii,li in enumerate(tempList):
+            for jj,itm in enumerate(li):
+                tableItem = QtWidgets.QTableWidgetItem(itm)
+                self.t_segmentations.setItem(ii,jj,tableItem)
+
+        self.t_segmentations.setHorizontalHeaderItem(0,QtWidgets.QTableWidgetItem('Object'))
+        self.t_segmentations.setHorizontalHeaderItem(1,QtWidgets.QTableWidgetItem('Points'))
 
         self.update()
 
@@ -457,21 +499,10 @@ class UI_classification(QtWidgets.QMainWindow):
 
     def format_points(self,line):
         # str like "[(384, 326), (369, 340), (359, 355)]"
-        line = line[1:-1]
-        app = False
-        tempStr = str()
-        for char in line:
-            if char == '(':
-                app = True
-            elif char == ')':
-                app = False
-            else:
-                if app:
-                    if char == ',':
-                        firstCoord = int(tempStr) # CARRY ON FROM HERE
-                        tempStr = str()
-                    tempStr = ''.join((tempStr,char))
-
+        m = re.findall(r'\d+',line)
+        it = iter(m)
+        retList = [(int(x),int(next(it))) for x in it]
+        return retList
 
 class QCropLabel (QtWidgets.QLabel):
     def __init__(self,image='Temp_Image.png',PatientID='',cl='Liver',cropNum=0,test=False,user='CH',parentQWidget = None):
@@ -545,10 +576,13 @@ class QCropLabel (QtWidgets.QLabel):
         self.close()
 
 class QCropLabel_Segmentation (QtWidgets.QLabel):
+
     def __init__(self,image='Temp_Image.png',PatientID='',cl='Liver',cropNum=0,test=False,user='CH',parentQWidget = None):
         super(QCropLabel_Segmentation, self).__init__(parentQWidget)
         self.image = image
+        self.segColor = {'Liver':1,'Body':2,'Cyst':3,'Lung':4,'Heart':5,'Kidney':6,'IVC':7,'Aorta':8,'Spleen':9}
         self.scaling = 800
+        self.imgDims = (384,288)
         self.PatientID = PatientID
         self.cl = cl
         self.cropNum = cropNum
@@ -641,7 +675,24 @@ class QCropLabel_Segmentation (QtWidgets.QLabel):
         for qP in self.points:
             self.formatPoints.append((qP.x(),qP.y()))
 
+    def save_mask(self):
+        fName = self.PatientID+'_MASK.npy'
+        
+        if fName in os.listdir('./Masks/'):
+            canvas = np.load('./Masks/'+fName)
+        else:
+            canvas = np.zeros((self.imgDims[1],self.imgDims[0]))
+
+        tempPoints = []
+        for pnt in self.formatPoints:
+            tempPoints.append((pnt[1]*self.imgDims[1]//(self.scaling*self.imgDims[1]//self.imgDims[0]),pnt[0]*self.imgDims[0]//self.scaling))
+
+        mahotas.polygon.fill_polygon(tempPoints,canvas,color=self.segColor[self.cl])
+
+        np.save('./Masks/'+self.PatientID+'_MASK',canvas)
+
     def close_app(self):
+        self.save_mask()
         self.close()   
 
 def main():
