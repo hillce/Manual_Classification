@@ -3,7 +3,7 @@
 # 06/05/19
 
 # Python Standard Libraries
-import time, os, sys
+import sys
 
 # Site-packages
 from PyQt5 import QtWidgets
@@ -16,7 +16,6 @@ def main():
     main_win = UI_classification(test=True)
     main_win.show()
     sys.exit(app.exec_())
-    return 0
 
 if __name__ == "__main__":
     main()

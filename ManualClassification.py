@@ -27,17 +27,13 @@ Artefact List:
 """
 
 # Python Standard Libraries
-import os, time, sys, csv, copy, re
+import os, sys, csv, re
 
 # Site packages
-from PyQt5 import Qt, QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
-import matplotlib.patches as patches
 import pydicom
-from PIL import Image
 import mahotas
 
 # User Functions
@@ -73,7 +69,7 @@ class UI_classification(QtWidgets.QMainWindow):
                         'Spleen':QtGui.QColor(0,255,255,255//10)}
         self.curImg = 0
         self.curSub = 0
-        self.imgDirec = "./Data/"
+        self.imgDirec = "D:/Data/shMOLLI_Data/"
         self.PatientID = ''
         self.cropNum = 0
         self.test = test
@@ -81,8 +77,11 @@ class UI_classification(QtWidgets.QMainWindow):
         self.boundingBoxCSV = 'Manual_Bounding_Boxes.csv'
         self.segmentationCSV = 'Segmentations.csv'
         self.cropList = []
+        os.makedirs("./Images/Original/", exist_ok=True)
+
         self.UI_setup()
         self.showFullScreen()
+
         #self.show()
 
     def UI_setup(self):
@@ -248,7 +247,7 @@ class UI_classification(QtWidgets.QMainWindow):
         #tempImage.save("Temp_Image.png")
         img0Patient0 = QtGui.QPixmap("Temp_Image.png")
         self.l_img.setPixmap(img0Patient0.scaled(750, 1500, QtCore.Qt.KeepAspectRatio))
-        self.PatientID = self.numPatients[self.curSub][7:]
+        self.PatientID = self.numPatients[self.curSub].split("/")[-1]
         self.check_for_crop()
 
     def change_img(self,button):
@@ -313,7 +312,7 @@ class UI_classification(QtWidgets.QMainWindow):
                     self.curSub = len(self.numPatients)-1
                 else:
                     self.curSub -= 1
-        self.PatientID = self.numPatients[self.curSub][7:]
+        self.PatientID = self.numPatients[self.curSub].split("/")[-1]
 
         self.imgsPatient = [x for x in os.listdir(self.numPatients[self.curSub]) if x.endswith('.dcm')]
         self.curImg = int(np.random.choice(np.linspace(0,len(self.imgsPatient)-1,num=len(self.imgsPatient))))
@@ -540,6 +539,8 @@ class QCropLabel (QtWidgets.QLabel):
         self.currentQRubberBand.deleteLater()
         cropQPixmap = self.pixmap().copy(currentQRect)
 
+        os.makedirs("./Images/"+self.cl, exist_ok=True)
+
         if self.cl in ['Liver','Body','Heart']:
             cropQPixmap.save("./Images/"+self.cl+"/"+self.PatientID+'.png')
         if self.cl in ['Cyst','Lung']:
@@ -700,7 +701,6 @@ def main():
     myQExampleLabel = QCropLabel_Segmentation()
     myQExampleLabel.show()
     sys.exit(myQApplication.exec_())
-    return 0    
 
 if __name__ == "__main__":
     main()

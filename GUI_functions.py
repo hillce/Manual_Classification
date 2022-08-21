@@ -1,4 +1,4 @@
-from PyQt5 import QtCore, QtWidgets, QtGui
+from PyQt5 import QtCore, QtGui
 
 def general_layout(widget,dark_mode=False):
     widget.setWindowTitle('Perspectum Diagnostics Quality Control')

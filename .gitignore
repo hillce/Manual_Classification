@@ -1,2 +1,4 @@
 /Data
 /Images
+*Temp*
+__pycache__
